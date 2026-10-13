@@ -1,8 +1,18 @@
 # Short Video Clipper
 
-一个无后端、无运行时依赖的 Chrome Manifest V3 视频保存扩展。浅纸色 popup、清楚的质量与文件名选择，以及按站点启用的「↓ 保存视频」悬浮按钮，参考 Web Clipper 的轻量体验，不使用 Obsidian 的品牌或资源。
+![Short Video Clipper：网页内悬浮按钮与工具栏 popup](docs/hero.jpg)
+
+一个无后端、无运行时依赖的 Chrome Manifest V3 视频保存扩展。冷色玻璃风格的 popup、清楚的质量与文件名选择，以及按站点启用的「↓ 保存视频」悬浮按钮，参考 Web Clipper 的轻量体验，不使用 Obsidian 的品牌或资源。
 
 **0.2.0 从 X 扩展到 Instagram、TikTok 和普通视频网页。它只保存当前页面已经提供、且能识别为完整视频文件的 HTTP(S) 地址，不保证任意平台或视频都可下载。** 平台适配与合成测试的范围见 [TEST-REPORT.md](TEST-REPORT.md)；真实平台成功率需实际媒体验证。
+
+## 界面
+
+| 工具栏 popup | 网页内悬浮按钮 |
+| --- | --- |
+| <img src="docs/popup.png" width="300" alt="popup：视频、媒体质量、文件名与保存按钮"> | <img src="docs/in-page-button.jpg" width="420" alt="已启用网站右下角的「↓ 保存视频」按钮"> |
+
+截图来自本地加载的扩展与本地合成测试页（示例画面为生成图片），没有访问任何真实平台。
 
 ## 安装与更新（Chrome 111+）
 
@@ -96,7 +106,7 @@ npm run test:browser  # 等价于 node tests/browser_smoke.cjs
 
 浏览器测试使用独立配置与合成页面，不接触用户 Chrome 配置，不请求真实平台或 CDN。测试副本增加仅用于合成站点的 host permissions，以替代无界面浏览器无法点击工具栏授予的 activeTab；下载 API 与权限同意结果使用测试桩，脚本注册/注销仍调用真实 Chrome API。它不能证明真实工具栏临时授权、权限对话框或在线视频下载成功。具体实际运行记录见 `TEST-REPORT.md`。
 
-构建生成 `short-video-clipper-install.zip`、`short-video-clipper-source.zip`、`SHA256SUMS-short-video-clipper.txt`；安装包只含运行文件、图标、README、验证记录和许可证，源码包另含测试与工具。不会覆盖旧版 `x-video-clipper-*.zip` 或旧 `SHA256SUMS.txt`。图标为原创几何 PNG（16/32/48/128），重画需要 Pillow：`python3 tools/icons.py`，运行扩展不需要 Pillow。
+构建生成 `short-video-clipper-install.zip`、`short-video-clipper-source.zip`、`SHA256SUMS-short-video-clipper.txt`；安装包只含运行文件、图标、README、验证记录和许可证，源码包另含测试与工具。不会覆盖旧版 `x-video-clipper-*.zip` 或旧 `SHA256SUMS.txt`。图标为原创磨砂玻璃 PNG（16/32/48/128），母版在 `art/icon-master.png`（生成图片、去除背景）；重新裁切需要 Pillow：`python3 tools/icons.py`，运行扩展不需要 Pillow。
 
 ### 手工验收
 
@@ -111,7 +121,7 @@ npm run test:browser  # 等价于 node tests/browser_smoke.cjs
 - `content.js`：检测、缓存、消息桥与悬浮按钮
 - `background.js`：逐站授权与脚本注册、下载核验和状态跟踪
 - `popup.html / popup.css / popup.js`：本地界面
-- `icons/`：原创 PNG 图标
+- `icons/`：原创 PNG 图标；`art/`：图标母版；`docs/`：README 用截图
 - `tests/`、`tools/`：测试和打包脚本
 
 ## 官方参考

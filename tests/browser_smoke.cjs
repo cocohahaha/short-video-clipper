@@ -72,7 +72,7 @@ const script=(data,id='initial-json')=>`<script type="application/json" id="${id
   await page.waitForSelector('#vclip-floating',{state:'visible',timeout:5000});let tid=await tabID(page);
   let data=await snapshot(tid);assert.equal(data.ok,true);assert.equal(data.media[0].variants.length,2);assert.equal(data.media[0].variants[0].height,720);
   const box=await page.locator('#vclip-floating').boundingBox();await page.mouse.click(box.x+box.width/2,box.y+20);
-  await page.waitForTimeout(350);assert.equal((await worker.evaluate('testDownloads')).length,1);
+  for(let i=0;i<50 && !(await worker.evaluate('testDownloads.length'));i++)await page.waitForTimeout(100);assert.equal((await worker.evaluate('testDownloads')).length,1);
   let popup=await popupFor(tid,page.url());await ready(popup);
   await popup.locator('#quality').selectOption(low);await popup.locator('#filename').fill('旅行片段');
   await popup.evaluate(()=>document.querySelector('#form').requestSubmit());

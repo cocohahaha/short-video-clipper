@@ -1,14 +1,16 @@
-"""Original geometric bookmark/download icon. Pillow is needed only to regenerate."""
+"""Cut the toolbar/store icons from art/icon-master.png (a Codex-generated
+frosted-glass tile, background removed). Pillow is needed only to regenerate."""
 from pathlib import Path
-from PIL import Image, ImageDraw
-root=Path(__file__).resolve().parent.parent/'icons'
-for size in (16,32,48,128):
-    k=4;s=size*k
-    im=Image.new('RGBA',(s,s),(0,0,0,0));d=ImageDraw.Draw(im)
-    def box(a):return tuple(int(v*s) for v in a)
-    d.rounded_rectangle(box((.02,.02,.98,.98)),radius=int(s*.23),fill='#294f3c')
-    d.polygon([(s*.30,s*.18),(s*.70,s*.18),(s*.70,s*.80),(s*.5,s*.67),(s*.30,s*.80)],fill='#eff5e8')
-    d.line([(s*.5,s*.30),(s*.5,s*.53)],fill='#294f3c',width=max(2,int(s*.055)))
-    d.line([(s*.40,s*.44),(s*.5,s*.54),(s*.60,s*.44)],fill='#294f3c',width=max(2,int(s*.055)))
-    im.resize((size,size),Image.Resampling.LANCZOS).save(root/f'icon{size}.png')
+from PIL import Image, ImageFilter
+root = Path(__file__).resolve().parent.parent
+master = Image.open(root / 'art' / 'icon-master.png').convert('RGBA')
+# size -> tile size inside the square canvas (128 keeps Chrome's suggested padding)
+for size, tile in ((16, 16), (32, 30), (48, 44), (128, 112)):
+    art = master.resize((tile, tile), Image.Resampling.LANCZOS)
+    if size <= 48:
+        art = art.filter(ImageFilter.UnsharpMask(radius=0.6, percent=60, threshold=1))
+    canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    offset = (size - tile) // 2
+    canvas.alpha_composite(art, (offset, offset))
+    canvas.save(root / 'icons' / f'icon{size}.png', optimize=True)
 print('4 PNG icons generated')
