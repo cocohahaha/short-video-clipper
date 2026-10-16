@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Short Video Clipper",
-  "version": "0.2.0",
-  "description": "保存当前网页已发现的完整视频文件，支持 X、Instagram、TikTok 与通用网页。",
+  "version": "0.4.0",
+  "description": "保存完整视频文件，支持 LinkedIn 信息流、X、Instagram、TikTok 与通用网页。",
   "minimum_chrome_version": "111",
   "permissions": [
     "downloads",
@@ -35,6 +35,7 @@
       ],
       "js": [
         "core-main.js",
+        "linkedin-player.js",
         "observer.js"
       ],
       "run_at": "document_start",
@@ -47,6 +48,7 @@
       ],
       "js": [
         "core.js",
+        "linkedin.js",
         "content.js"
       ],
       "run_at": "document_start"

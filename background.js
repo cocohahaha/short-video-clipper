@@ -22,15 +22,49 @@ async function getTab(msg,sender) {
   const tab=await chrome.tabs.get(id);
   const info=C.pageInfo(tab.url);
   if(!info) throw Error('只能检测普通 HTTP(S) 网页；Chrome 内部页和应用商店不支持。');
-  if(info.platform==='x' && !info.detail) throw Error('请打开 X 的单条视频推文页面。');
   return {tab,info};
 }
 async function inject(tabId,site) {
-  await chrome.scripting.executeScript({target:{tabId},world:'MAIN',files:['core-main.js','observer.js']});
-  await chrome.scripting.executeScript({target:{tabId},world:'ISOLATED',files:['core.js','content.js']});
+  await chrome.scripting.executeScript({target:{tabId},world:'MAIN',files:['core-main.js','linkedin-player.js','observer.js']});
+  await chrome.scripting.executeScript({target:{tabId},world:'ISOLATED',files:['core.js','linkedin.js','content.js']});
   await chrome.tabs.sendMessage(tabId,{type:'OBSERVE_MODE',enabled:true});
   await chrome.tabs.sendMessage(tabId,{type:'FLOAT_MODE',enabled:site.enabled});
 }
+async function linkedInPublicPost(tab,page,post,timeoutMs) {
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),MAX=2*1024*1024;
+  try {
+    if(C.pageInfo((await chrome.tabs.get(tab.id)).url)?.key!==page.key) throw Error('页面已变化，请重新检测。');
+    const response=await fetch(post.key,{credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',cache:'no-store',signal:controller.signal});
+    if(!response.ok || !/^text\/html(?:;|$)/i.test(response.headers.get('content-type') || '')) throw Error('公开页面暂时无法读取。');
+    if(response.url && (C.pageInfo(response.url)?.id!==post.id || new URL(response.url).origin!==post.origin)) throw Error('返回的公开页面与当前帖子不符。');
+    if(Number(response.headers.get('content-length'))>MAX) throw Error('公开页面超过检测大小限制。');
+    const reader=response.body?.getReader();if(!reader) throw Error('公开页面没有可读取内容。');
+    let total=0;const chunks=[];
+    try {
+      while(true){const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>MAX){await reader.cancel();throw Error('公开页面超过检测大小限制。');}chunks.push(value);}
+    } finally {reader.releaseLock();}
+    if(C.pageInfo((await chrome.tabs.get(tab.id)).url)?.key!==page.key) throw Error('页面已变化，请重新检测。');
+    const bytes=new Uint8Array(total);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+    const result=await chrome.tabs.sendMessage(tab.id,{type:'LINKEDIN_HTML',pageKey:page.key,ownerId:post.id,html:new TextDecoder().decode(bytes)});
+    if(!result?.ok) throw Error(result?.error || '公开页面未提供当前帖子可保存的完整视频。');
+  } finally {clearTimeout(timer);}
+}
+async function linkedInVisiblePosts(tab,info,refresh=false) {
+  const existing=await chrome.tabs.sendMessage(tab.id,{type:'SNAPSHOT'});
+  if(existing?.pageKey!==info.key || C.pageInfo((await chrome.tabs.get(tab.id)).url)?.key!==info.key) throw Error('页面已变化，请重新检测。');
+  const ids=info.detail?[info.id]:[...new Set((existing.posts || []).map(p=>p?.id).filter(id=>typeof id==='string' && /^\d{1,30}$/.test(id)))].slice(0,5);
+  const deadline=Date.now()+20000,warnings=[];
+  for(const id of ids) {
+    if(C.pageInfo((await chrome.tabs.get(tab.id)).url)?.key!==info.key){warnings.push('页面已变化，请重新检测。');break;}
+    if(existing.media?.some(m=>(info.detail || m.ownerId===id) && (m.source==='player' || !refresh) && C.variants(m.variants,'linkedin').length)) continue;
+    const remaining=deadline-Date.now();if(remaining<500){warnings.push('本次检测超时，请重新检测。');break;}
+    const post=info.detail?info:C.pageInfo(`${info.origin}/feed/update/urn:li:activity:${id}/`);
+    try {await linkedInPublicPost(tab,info,post,Math.min(10000,remaining));}
+    catch(e) {warnings.push(e.name==='AbortError'?'LinkedIn 检测超时，请重新检测。':`LinkedIn 检测未完成：${e.message}`);}
+  }
+  return [...new Set(warnings)].join(' ');
+}
+
 async function unregister(pattern) {
   const scripts=await chrome.scripting.getRegisteredContentScripts();
   const ids=scripts.filter(s=>s.id.startsWith('vclip-') && s.matches?.includes(pattern)).map(s=>s.id);
@@ -50,7 +84,11 @@ chrome.runtime.onMessage.addListener((msg,sender,reply) => {
     const {tab,info}=await getTab(msg,sender);
     const site=await status(info);
     if(msg.type==='SITE_STATUS') return {ok:true,...site};
-    if(msg.type==='PREPARE') {await inject(tab.id,site);return {ok:true,site};}
+    if(msg.type==='PREPARE') {
+      await inject(tab.id,site);let warning='';
+      if(info.platform==='linkedin') try {warning=await linkedInVisiblePosts(tab,info,msg.refreshLinkedIn===true);} catch(e) {warning=e.name==='AbortError'?'LinkedIn 检测超时，请重新检测。':`LinkedIn 检测未完成：${e.message}`;}
+      return {ok:true,site,warning};
+    }
     if(msg.type==='ENABLE_SITE') {
       if(site.fixed) return {ok:true,...site};
       // The popup requests the current origin in a user gesture before this message.
@@ -58,8 +96,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply) => {
       await unregister(site.pattern);
       const [main,content]=scriptIds(site.pattern);
       await chrome.scripting.registerContentScripts([
-        {id:main,matches:[site.pattern],js:['core-main.js','observer.js'],world:'MAIN',runAt:'document_start',persistAcrossSessions:true},
-        {id:content,matches:[site.pattern],js:['core.js','content.js'],world:'ISOLATED',runAt:'document_start',persistAcrossSessions:true}
+        {id:main,matches:[site.pattern],js:['core-main.js','linkedin-player.js','observer.js'],world:'MAIN',runAt:'document_start',persistAcrossSessions:true},
+        {id:content,matches:[site.pattern],js:['core.js','linkedin.js','content.js'],world:'ISOLATED',runAt:'document_start',persistAcrossSessions:true}
       ]);
       const enabledSite={...site,granted:true,enabled:true};
       await inject(tab.id,enabledSite);

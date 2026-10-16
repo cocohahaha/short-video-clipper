@@ -13,7 +13,7 @@ function qualities(){
   $('quality').replaceChildren(option('best','最高已发现质量'),option('smallest','最低已发现质量'),...vv.map(v=>option(v.url,C.label(v))));
   if(!['best','smallest'].includes(quality) && !vv.some(v=>v.url===quality))$('quality').append(option(quality,'所选版本已失效，请重新选择'));
   $('quality').value=quality;
-  $('filename').value=stored?.filename || `${snapshot?.filename || 'video'}${snapshot?.media.length>1?`-${index+1}`:''}`;
+  $('filename').value=stored?.filename || m?.filename || (m?.ownerId?`video-${snapshot.platform}-${m.ownerId}`:`${snapshot?.filename || 'video'}${snapshot?.media.length>1?`-${index+1}`:''}`);
   $('quality').disabled=!vv.length;$('save').disabled=!C.choose(vv,quality,m?.source==='dom'?'web':snapshot?.platform);suffix();
 }
 function permissionUI(){
@@ -21,25 +21,26 @@ function permissionUI(){
   $('siteAccess').disabled=site.fixed;
   $('revokeAccess').hidden=site.fixed || site.enabled || !site.granted;
   $('siteAccess').textContent=site.fixed?'X 已启用自动检测':site.enabled?'关闭此网站的悬浮按钮与访问':'为此网站启用悬浮按钮';
-  $('permissionNote').textContent=site.fixed?'仅在 X 的单条推文页面显示按钮。':site.enabled?'已授权此网站。刷新后可以提前检测视频；可随时关闭。':'当前仅在点击工具栏时检测。启用按钮时，Chrome 会请求访问这个网站。';
+  $('permissionNote').textContent=site.fixed?'X 信息流与单条帖子自动检测；请将视频滚动到屏幕中。':site.enabled?'已授权此网站。刷新后可以提前检测视频；可随时关闭。':'当前仅在点击工具栏时检测。启用按钮时，Chrome 会请求访问这个网站。';
 }
-async function scan(){
+async function scan(refreshLinkedIn=false){
   if(loading || saving)return;remember();const oldPage=snapshot?.pageKey,oldChoice=choiceKey;site=null;permissionUI();loading=true;$('save').disabled=true;$('refresh').disabled=true;$('status').textContent='正在寻找视频…';
   try{
     const [tab]=await chrome.tabs.query({active:true,currentWindow:true});tabId=tab?.id;
     const info=C.pageInfo(tab?.url);if(!info)throw Error('请打开包含视频的普通网页。Chrome 内部页与应用商店不支持。');
+    if(info.platform==='linkedin')$('status').textContent='正在检测 LinkedIn 视频…';
     const access=await chrome.runtime.sendMessage({type:'SITE_STATUS',tabId});
     if(access?.ok){site=access;permissionUI();}
-    const prep=await chrome.runtime.sendMessage({type:'PREPARE',tabId});
+    const prep=await chrome.runtime.sendMessage({type:'PREPARE',tabId,refreshLinkedIn:refreshLinkedIn===true});
     if(!prep?.ok)throw Error(prep?.error || '无法连接页面。');site=prep.site;permissionUI();
     snapshot=await chrome.tabs.sendMessage(tabId,{type:'SNAPSHOT'});
     if(snapshot?.pageKey!==oldPage){choices.clear();choiceKey='';}
     if(!snapshot?.ok)throw Error(snapshot?.error || '未收到页面信息。');
-    $('tweet').textContent=snapshot.label;$('platform').textContent={x:'X',instagram:'IG',tiktok:'TikTok',web:'网页'}[snapshot.platform] || '视频';
+    $('tweet').textContent=snapshot.label;$('platform').textContent={x:'X',instagram:'IG',tiktok:'TikTok',linkedin:'in',web:'网页'}[snapshot.platform] || '视频';
     $('media').replaceChildren(...snapshot.media.map((m,i)=>option(m.key,`${m.label || `视频 ${i+1}`}${!m.variants.length?' · 无完整文件':''}`)));
     const first=snapshot.media.find(m=>m.variants.length);if(oldPage===snapshot.pageKey && snapshot.media.some(m=>m.key===oldChoice))$('media').value=oldChoice;else if(first)$('media').value=first.key;
     $('media').disabled=!snapshot.media.length;qualities();
-    $('status').textContent=first ? first.source==='dom'?'已发现播放器 / 网页提供的文件。请核对视频，再选择质量保存。':'已发现页面提供的视频文件。选择质量后，交给 Chrome 保存。' : snapshot.error;
+    $('status').textContent=first ? ['dom','player'].includes(first.source)?'已发现当前播放器提供的文件。请核对视频，再选择质量保存。':'已发现页面提供的视频文件。选择质量后，交给 Chrome 保存。' : prep.warning || snapshot.error;
   }catch(e){snapshot=null;$('media').replaceChildren();$('quality').replaceChildren();$('media').disabled=$('quality').disabled=true;$('status').textContent=/Receiving end|Cannot access|Missing host permission/i.test(e.message)?'页面尚未就绪或没有访问权限，请重新打开工具栏后再检测。':e.message;}
   finally{loading=false;$('refresh').disabled=false;}
 }
@@ -64,7 +65,7 @@ $('revokeAccess').addEventListener('click',async()=>{
   try{const res=await chrome.runtime.sendMessage({type:'DISABLE_SITE',tabId});if(!res?.ok)throw Error(res?.error);site=res;$('status').textContent='已撤销此网站访问。仍可从工具栏按次检测。';}
   catch(e){$('status').textContent=e.message;}finally{permissionUI();}
 });
-$('media').addEventListener('change',()=>{remember();qualities();});$('quality').addEventListener('change',()=>{suffix();remember();$('save').disabled=!chosen().v;});$('filename').addEventListener('input',remember);$('refresh').addEventListener('click',scan);
+$('media').addEventListener('change',()=>{remember();qualities();});$('quality').addEventListener('change',()=>{suffix();remember();$('save').disabled=!chosen().v;});$('filename').addEventListener('input',remember);$('refresh').addEventListener('click',()=>scan(true));
 $('form').addEventListener('submit',async e=>{
   e.preventDefault();if(saving || !snapshot)return;const {m,v}=chosen();
   if(!v){$('status').textContent='所选质量不可用，请重新检测。';return;}

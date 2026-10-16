@@ -2,10 +2,11 @@
 (() => {
   if (globalThis.__vclipObserverV2 || !globalThis.XClipCore) return;
   const initial = globalThis.XClipCore.pageInfo(location.href);
-  if (!initial || initial.platform === 'web') return; // Generic sites do not need network hooks.
+  if (!initial || !['x','instagram','tiktok'].includes(initial.platform)) return; // LinkedIn uses explicit player data / public post HTML, without network hooks.
   Object.defineProperty(globalThis,'__vclipObserverV2',{value:true});
   const core = globalThis.XClipCore, MAX = 5*1024*1024;
   const cache = new Map(); let currentKey = '', active = true;
+  const observable = info => info && (info.platform === 'x' || (info.detail && ['instagram','tiktok'].includes(info.platform)));
   const emit = (pageKey,media) => window.postMessage({channel:'vclip:media:v2',pageKey,media},location.origin);
   function currentPage() {
     const info = core.pageInfo(location.href), key = info?.key || '';
@@ -14,7 +15,7 @@
   }
   function inspect(data,pageKey) {
     const info = currentPage();
-    if (!active || !info?.detail || info.platform === 'web' || info.key !== pageKey) return;
+    if (!active || !observable(info) || info.key !== pageKey) return;
     const media = core.extractPlatform(data,info);
     if (!media.length) return;
     for (const m of media) cache.set(m.key,m);
@@ -23,7 +24,7 @@
   }
   // Response hosts are platform-owned; media CDNs are validated separately in core.
   function allowed(raw,info) {
-    if (!info || !info.detail || info.platform === 'web') return false;
+    if (!observable(info)) return false;
     try {
       const u = new URL(raw,location.href);
       if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
@@ -81,7 +82,7 @@
   }
   function scanScripts() {
     const info = currentPage();
-    if (!active || !info?.detail || info.platform === 'web') return;
+    if (!active || !observable(info)) return;
     // TikTok's hydration data often precedes extension activation. Only parse JSON,
     // never execute script text or read arbitrary globals/cookies/local storage.
     const scripts = document.querySelectorAll('script[type="application/json"],script[type="application/ld+json"],script#SIGI_STATE,script#__UNIVERSAL_DATA_FOR_REHYDRATION__');
@@ -106,7 +107,7 @@
     }
     if (!active || event.data?.channel !== 'vclip:request:v2') return;
     const info = currentPage();
-    if (!info?.detail || info.platform === 'web') return;
+    if (!observable(info)) return;
     scanScripts();
     if (cache.size) emit(info.key,[...cache.values()]);
   });

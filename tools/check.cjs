@@ -11,7 +11,7 @@ for(const script of manifest.content_scripts) {
   assert(!script.all_frames,'No automatic subframe access');
 }
 assert.equal(fs.readFileSync(path.join(root,'core-main.js'),'utf8'),fs.readFileSync(path.join(root,'core.js'),'utf8'));
-for(const name of ['core-main.js','core.js','observer.js','content.js','background.js','popup.js']) new vm.Script(fs.readFileSync(path.join(root,name),'utf8'),{filename:name});
+for(const name of ['core-main.js','core.js','linkedin.js','linkedin-player.js','observer.js','content.js','background.js','popup.js']) new vm.Script(fs.readFileSync(path.join(root,name),'utf8'),{filename:name});
 const referenced=[manifest.background.service_worker,manifest.action.default_popup,...Object.values(manifest.icons),...manifest.content_scripts.flatMap(c=>c.js)];
 for(const file of referenced) assert(fs.existsSync(path.join(root,file)),`missing ${file}`);
 assert(!/https?:\/\//.test(fs.readFileSync(path.join(root,'popup.html'),'utf8')),'remote resources in popup');

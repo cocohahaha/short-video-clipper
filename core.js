@@ -2,7 +2,7 @@
 (() => {
   const MIME_EXT = Object.freeze({'video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov','video/x-m4v':'m4v','video/ogg':'ogv'});
   const EXT_MIME = Object.freeze({mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',m4v:'video/x-m4v',ogv:'video/ogg'});
-  const CDN = Object.freeze({instagram:['cdninstagram.com','fbcdn.net'],tiktok:['tiktokcdn.com','tiktokcdn-us.com','tiktokcdn-eu.com','tiktokv.com','tiktok.com','byteoversea.com','ibytedtos.com','bytefcdn-oversea.com','muscdn.com','akamaized.net']});
+  const CDN = Object.freeze({instagram:['cdninstagram.com','fbcdn.net'],tiktok:['tiktokcdn.com','tiktokcdn-us.com','tiktokcdn-eu.com','tiktokv.com','tiktok.com','byteoversea.com','ibytedtos.com','bytefcdn-oversea.com','muscdn.com','akamaized.net'],linkedin:['licdn.com']});
   const suffix = (host,domain) => host === domain || host.endsWith('.' + domain);
   const has = (object,key) => Object.prototype.hasOwnProperty.call(object,key);
   const cleanMime = value => typeof value === 'string' ? value.split(';')[0].trim().toLowerCase() : '';
@@ -28,6 +28,11 @@
       } else if (['tiktok.com','www.tiktok.com'].includes(u.hostname)) {
         platform = 'tiktok'; label = 'TikTok';
         id = u.pathname.match(/^\/@[^/]+\/video\/(\d+)(?:\/|$)/)?.[1] || ''; detail = !!id;
+      } else if (['linkedin.com','www.linkedin.com'].includes(u.hostname)) {
+        platform = 'linkedin'; label = 'LinkedIn';
+        const path = decodeURIComponent(u.pathname);
+        if(u.protocol === 'https:' && !u.port) id = path.match(/^\/feed\/update\/urn:li:activity:(\d+)\/?$/)?.[1] || path.match(/^\/posts\/[^/]+-activity-(\d+)(?:-[^/]+)?\/?$/)?.[1] || '';
+        detail = !!id;
       }
       if (platform !== 'web') u.hash = '';
       return {key:u.href,platform,id,origin:u.origin,label,detail};
@@ -58,7 +63,7 @@
         if (u.protocol !== 'https:' || u.hostname !== 'video.twimg.com' || !/\.mp4$/i.test(u.pathname) || (supplied && supplied !== 'video/mp4')) return null;
         return u.href;
       }
-      if (!['web','instagram','tiktok'].includes(platform) || !['http:','https:'].includes(u.protocol) || !publicHost(u.hostname)) return null;
+      if (!['web','instagram','tiktok','linkedin'].includes(platform) || !['http:','https:'].includes(u.protocol) || !publicHost(u.hostname)) return null;
       if (platform !== 'web' && (u.protocol !== 'https:' || !CDN[platform].some(domain => suffix(u.hostname,domain)))) return null;
       const path = u.pathname.toLowerCase();
       if (/\.(?:m3u8|mpd|m4s|ts)(?:\/|$)/.test(path)) return null;
@@ -95,7 +100,7 @@
       const old = unique.get(v.url);
       if (!old || v.bitrate > old.bitrate || v.width*v.height > old.width*old.height) unique.set(v.url,v);
     }
-    return [...unique.values()].sort((a,b) => b.bitrate-a.bitrate || b.width*b.height-a.width*a.height);
+    return [...unique.values()].sort((a,b) => b.bitrate-a.bitrate || b.width*b.height-a.width*a.height || b.height-a.height || b.width-a.width);
   }
   // Traverse to locate exact post ownership; video fields are parsed by an adapter.
   function visit(data,onNode) {
@@ -121,6 +126,27 @@
       });
     });
     return [...found.values()].slice(0,16);
+  }
+  // A timeline response contains several independent posts. Attribute each media
+  // item only to the numeric ID on its own post node; never inherit an ancestor's
+  // ID while traversing quoted posts, replies, or neighbouring timeline entries.
+  function extractXFeed(data) {
+    const found = new Map();
+    visit(data,node => {
+      const ownerId = String(node.rest_id || node.id_str || '');
+      if (!/^\d+$/.test(ownerId)) return;
+      const legacy = node.legacy || node, media = legacy.extended_entities?.media || legacy.entities?.media || [];
+      if (!Array.isArray(media)) return;
+      media.slice(0,16).forEach((m,i) => {
+        if (!m?.video_info || !['video','animated_gif'].includes(m.type)) return;
+        const mediaKey = String(m.media_key || m.id_str || i).slice(0,100), key = 'x:' + ownerId + ':' + mediaKey;
+        if (found.size >= 16 && !found.has(key)) return;
+        const previous = found.get(key), vv = variants(m.video_info.variants);
+        found.set(key,{key,ownerId,type:m.type,variants:previous ? variants([...previous.variants,...vv]) : vv,
+          hls:!!previous?.hls || (Array.isArray(m.video_info.variants) && m.video_info.variants.some(v => /mpegurl/i.test(v?.content_type || ''))),source:'page'});
+      });
+    });
+    return [...found.values()];
   }
   const streaming = value => typeof value === 'string' && /\.m3u8(?:[?#]|$)/i.test(value);
   function extractInstagram(data,info) {
@@ -170,6 +196,7 @@
     return [...found.values()].slice(0,16);
   }
   function extractPlatform(data,info) {
+    if (info?.platform === 'x' && !info.detail) return extractXFeed(data);
     if (!info?.detail || typeof info.id !== 'string' || !info.id) return [];
     if (info.platform === 'x') return extract(data,info.id);
     if (info.platform === 'instagram') return extractInstagram(data,info);
@@ -187,8 +214,9 @@
   }
   function choose(list,quality,platform = 'x') {
     const vv = variants(list,platform);
-    if (quality === 'best') return vv[0] || null;
-    if (quality === 'smallest') return vv.at(-1) || null;
+    const ranked = vv.filter(v=>v.bitrate || v.width || v.height), automatic = ranked.length ? ranked : vv;
+    if (quality === 'best') return automatic[0] || null;
+    if (quality === 'smallest') return automatic.at(-1) || null;
     return vv.find(v => v.url === quality) || null;
   }
   function label(v) {
