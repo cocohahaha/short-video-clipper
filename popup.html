@@ -1,11 +1,22 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Short Video Clipper</title><link rel="stylesheet" href="popup.css"></head>
-<body><header><img src="icons/icon128.png" width="38" height="38" alt=""><div><h1>Short Video Clipper</h1><p>保存网页上的完整视频文件</p></div><span class="tag" id="platform">视频</span></header>
-<main><div class="eyebrow">当前网站 <span id="tweet">—</span></div><p id="status" role="status" aria-live="polite">正在寻找视频…</p>
-<form id="form"><label for="media">视频 / 播放器</label><select id="media" disabled></select><label for="quality">媒体质量</label><select id="quality" disabled></select>
-<label for="filename">文件名</label><div class="filename"><input id="filename" maxlength="100" autocomplete="off" value="video"><span id="extension">.mp4</span></div>
-<label class="check"><input type="checkbox" id="saveAs" checked>保存时选择位置</label><button id="save" type="submit" disabled>↓ 保存视频</button></form>
-<div class="foot"><button id="refresh" type="button">重新检测</button><span>无后端 · 无分析追踪</span></div>
-<button id="siteAccess" class="site-access" type="button" disabled>仅在点击时检测当前网站</button><button id="revokeAccess" class="revoke-access" type="button" hidden>撤销已授予的网站访问</button><p id="permissionNote" class="permission-note">X 自动检测；其它网站可按需启用悬浮按钮。</p>
-<p id="download" class="download" aria-live="polite"></p>
-<details><summary>支持哪些视频？</summary><p>LinkedIn、X 信息流、Instagram、TikTok 和普通视频网页均可尝试检测完整视频文件。将视频滚动到当前画面后检测，多个视频可分别选择。仅保存页面已提供的地址，不拼接 HLS / DASH、不转换 blob、不解密 DRM。平台可能不提供可下载版本；请播放后重试。</p></details></main>
-<script src="core.js"></script><script src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Short Video Clipper</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<h1>保存视频</h1>
+<p id="status" role="status">正在检测…</p>
+<form id="form" hidden>
+  <label id="mediaRow">视频<select id="media"></select></label>
+  <label>质量<select id="quality"></select></label>
+  <label>文件名<span class="name"><input id="filename" maxlength="100" autocomplete="off" spellcheck="false"><span id="ext">.mp4</span></span></label>
+  <label class="check"><input type="checkbox" id="saveAs">保存时选择位置</label>
+  <button id="save">保存</button>
+</form>
+<button type="button" id="rescan">重新检测</button>
+<script src="core.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

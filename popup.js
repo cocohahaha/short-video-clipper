@@ -1,83 +1,94 @@
-const $=id=>document.getElementById(id), C=XClipCore;
-let snapshot,tabId,site,loading=false,saving=false,prefs={quality:'best',saveAs:true};
-let choiceKey='',choices=new Map();
-function remember(){if(choiceKey)choices.set(choiceKey,{quality:$('quality').value,filename:$('filename').value});}
-function option(value,text){const o=document.createElement('option');o.value=value;o.textContent=text;return o;}
-function chosen(){const m=snapshot?.media.find(m=>m.key===$('media').value);return {m,v:C.choose(m?.variants,$('quality').value,m?.source==='dom'?'web':snapshot?.platform)};}
-function suffix(){const {v}=chosen();$('extension').textContent=`.${v?.ext || 'mp4'}`;}
-function qualities(){
-  const m=snapshot?.media.find(m=>m.key===$('media').value),vv=C.variants(m?.variants,m?.source==='dom'?'web':snapshot?.platform);
-  const index=snapshot?.media.indexOf(m) || 0;
-  choiceKey=m?.key || '';
-  const stored=choices.get(choiceKey),quality=stored?.quality || (prefs.quality==='smallest'?'smallest':'best');
-  $('quality').replaceChildren(option('best','最高已发现质量'),option('smallest','最低已发现质量'),...vv.map(v=>option(v.url,C.label(v))));
-  if(!['best','smallest'].includes(quality) && !vv.some(v=>v.url===quality))$('quality').append(option(quality,'所选版本已失效，请重新选择'));
-  $('quality').value=quality;
-  $('filename').value=stored?.filename || m?.filename || (m?.ownerId?`video-${snapshot.platform}-${m.ownerId}`:`${snapshot?.filename || 'video'}${snapshot?.media.length>1?`-${index+1}`:''}`);
-  $('quality').disabled=!vv.length;$('save').disabled=!C.choose(vv,quality,m?.source==='dom'?'web':snapshot?.platform);suffix();
+const C = ClipCore, $ = id => document.getElementById(id);
+const say = text => { $('status').textContent = text; };
+const ERRORS = {
+  NETWORK_FAILED: '网络连接失败。', NETWORK_TIMEOUT: '网络超时。', SERVER_FORBIDDEN: '服务器拒绝访问，地址可能已过期，请重新检测。',
+  SERVER_UNAUTHORIZED: '服务器要求登录，无法直接保存。', SERVER_BAD_CONTENT: '服务器没有返回视频文件。',
+  FILE_NO_SPACE: '磁盘空间不足。', FILE_ACCESS_DENIED: '无法写入所选位置。'
+};
+const reason = code => /cancel/i.test(code) ? '已取消。' : ERRORS[code] || code || '原因未知。';
+let videos = [];
+
+function describe(v) {
+  const size = v.width && v.height ? `${v.width} × ${v.height}` : v.height ? `${v.height}p` : '尺寸未知';
+  return [size, v.bitrate && `${(v.bitrate / 1e6).toFixed(1)} Mbps`, v.ext !== 'mp4' && v.ext.toUpperCase(), v.note].filter(Boolean).join(' · ');
 }
-function permissionUI(){
-  if(!site){$('siteAccess').disabled=true;$('revokeAccess').hidden=true;return;}
-  $('siteAccess').disabled=site.fixed;
-  $('revokeAccess').hidden=site.fixed || site.enabled || !site.granted;
-  $('siteAccess').textContent=site.fixed?'X 已启用自动检测':site.enabled?'关闭此网站的悬浮按钮与访问':'为此网站启用悬浮按钮';
-  $('permissionNote').textContent=site.fixed?'X 信息流与单条帖子自动检测；请将视频滚动到屏幕中。':site.enabled?'已授权此网站。刷新后可以提前检测视频；可随时关闭。':'当前仅在点击工具栏时检测。启用按钮时，Chrome 会请求访问这个网站。';
+
+function filename(name, fallback, ext) {
+  const clean = value => [...String(value || '').normalize('NFC').replace(/\.(mp4|m4v|webm|mov|ogv)$/i, '')
+    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, '-').trim()].slice(0, 100).join('').replace(/^[.\s]+|[.\s]+$/g, '');
+  let base = clean(name) || clean(fallback) || 'video';
+  if (/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(base)) base = '_' + base; // Windows device names
+  return `${base}.${ext}`;
 }
-async function scan(refreshLinkedIn=false){
-  if(loading || saving)return;remember();const oldPage=snapshot?.pageKey,oldChoice=choiceKey;site=null;permissionUI();loading=true;$('save').disabled=true;$('refresh').disabled=true;$('status').textContent='正在寻找视频…';
-  try{
-    const [tab]=await chrome.tabs.query({active:true,currentWindow:true});tabId=tab?.id;
-    const info=C.pageInfo(tab?.url);if(!info)throw Error('请打开包含视频的普通网页。Chrome 内部页与应用商店不支持。');
-    if(info.platform==='linkedin')$('status').textContent='正在检测 LinkedIn 视频…';
-    const access=await chrome.runtime.sendMessage({type:'SITE_STATUS',tabId});
-    if(access?.ok){site=access;permissionUI();}
-    const prep=await chrome.runtime.sendMessage({type:'PREPARE',tabId,refreshLinkedIn:refreshLinkedIn===true});
-    if(!prep?.ok)throw Error(prep?.error || '无法连接页面。');site=prep.site;permissionUI();
-    snapshot=await chrome.tabs.sendMessage(tabId,{type:'SNAPSHOT'});
-    if(snapshot?.pageKey!==oldPage){choices.clear();choiceKey='';}
-    if(!snapshot?.ok)throw Error(snapshot?.error || '未收到页面信息。');
-    $('tweet').textContent=snapshot.label;$('platform').textContent={x:'X',instagram:'IG',tiktok:'TikTok',linkedin:'in',web:'网页'}[snapshot.platform] || '视频';
-    $('media').replaceChildren(...snapshot.media.map((m,i)=>option(m.key,`${m.label || `视频 ${i+1}`}${!m.variants.length?' · 无完整文件':''}`)));
-    const first=snapshot.media.find(m=>m.variants.length);if(oldPage===snapshot.pageKey && snapshot.media.some(m=>m.key===oldChoice))$('media').value=oldChoice;else if(first)$('media').value=first.key;
-    $('media').disabled=!snapshot.media.length;qualities();
-    $('status').textContent=first ? ['dom','player'].includes(first.source)?'已发现当前播放器提供的文件。请核对视频，再选择质量保存。':'已发现页面提供的视频文件。选择质量后，交给 Chrome 保存。' : prep.warning || snapshot.error;
-  }catch(e){snapshot=null;$('media').replaceChildren();$('quality').replaceChildren();$('media').disabled=$('quality').disabled=true;$('status').textContent=/Receiving end|Cannot access|Missing host permission/i.test(e.message)?'页面尚未就绪或没有访问权限，请重新打开工具栏后再检测。':e.message;}
-  finally{loading=false;$('refresh').disabled=false;}
+
+// A LinkedIn post's public page lists its MP4 files. Read without cookies.
+async function linkedInPublic(id) {
+  try {
+    const response = await fetch(`https://www.linkedin.com/feed/update/urn:li:activity:${id}/`, {credentials: 'omit', signal: AbortSignal.timeout(10000)});
+    if (!response.ok) return [];
+    const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+    return C.linkedInSources(html).filter(s => s.owner === id).map(s => ({owner: id, variants: s.variants}));
+  } catch { return []; }
 }
-$('siteAccess').addEventListener('click',async()=>{
-  if(!site || site.fixed || !tabId)return;
-  $('siteAccess').disabled=true;
-  try{
-    if(site.enabled){
-      const res=await chrome.runtime.sendMessage({type:'DISABLE_SITE',tabId});if(!res?.ok)throw Error(res?.error);site=res;
-      $('status').textContent='已关闭此网站的悬浮按钮并撤销访问；工具栏仍可按次检测。';
-    }else{
-      // Call directly in this click's user gesture; never request all optional sites.
-      const granted=await chrome.permissions.request({origins:[site.pattern]});
-      if(!granted){$('status').textContent='未授权；仍可从工具栏按次检测。';return;}
-      const res=await chrome.runtime.sendMessage({type:'ENABLE_SITE',tabId});if(!res?.ok)throw Error(res?.error);site=res;
-      $('status').textContent='已为此网站启用悬浮按钮。刷新网页可提前检测页面媒体信息。';
-    }
-  }catch(e){$('status').textContent=e.message || '网站权限设置未完成。';const current=await chrome.runtime.sendMessage({type:'SITE_STATUS',tabId}).catch(()=>null);if(current?.ok)site=current;}finally{permissionUI();}
+
+const chosen = () => videos[$('media').value];
+const version = () => chosen().variants[$('quality').value];
+function showVideo() {
+  $('quality').replaceChildren(...chosen().variants.map((v, i) => new Option(describe(v), i)));
+  $('filename').value = chosen().name;
+  $('ext').textContent = '.' + version().ext;
+}
+
+async function scan() {
+  $('form').hidden = true;
+  $('rescan').disabled = true;
+  say('正在检测…');
+  try {
+    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+    const info = C.pageInfo(tab?.url || '');
+    if (!info) throw Error('此页面不支持，请在普通网页上使用。');
+    // On the four platforms page.js is already running from page load; elsewhere it starts now.
+    await chrome.scripting.executeScript({target: {tabId: tab.id}, world: 'MAIN', files: ['core.js', 'page.js']});
+    await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['core.js', 'content.js']});
+    const page = await chrome.tabs.sendMessage(tab.id, {type: 'snapshot'});
+    const media = [...page.media, ...(await Promise.all(page.missing.map(linkedInPublic))).flat()];
+    const prefix = page.platform === 'web' ? page.host : page.platform;
+    videos = media.map((m, i) => ({...m, name: `${prefix}-${m.owner || page.id || 'video'}${media.length > 1 && !m.owner ? '-' + (i + 1) : ''}`}));
+    if (!videos.length) throw Error('没有找到可保存的视频文件。请让视频出现在屏幕中并播放几秒，再重新检测。分段流、直播和加密视频无法保存。');
+    $('media').replaceChildren(...videos.map((v, i) => new Option(`视频 ${i + 1}`, i)));
+    $('mediaRow').hidden = videos.length < 2;
+    showVideo();
+    $('form').hidden = false;
+    say(videos.length > 1 ? `找到 ${videos.length} 个视频，按页面顺序排列。` : '找到 1 个视频。');
+  } catch (e) {
+    say(/Cannot access|cannot be scripted|Receiving end/i.test(e.message) ? 'Chrome 不允许读取此页面，或页面尚未加载完成。请刷新页面后再试。' : e.message);
+  } finally {
+    $('rescan').disabled = false;
+  }
+}
+
+$('form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const v = version();
+  localStorage.saveAs = $('saveAs').checked ? 'yes' : 'no';
+  $('save').disabled = true;
+  try {
+    const result = await chrome.runtime.sendMessage({type: 'download', url: v.url, filename: filename($('filename').value, chosen().name, v.ext), saveAs: $('saveAs').checked});
+    if (!result?.ok) throw Error(result?.error);
+    say('已开始下载。');
+    chrome.downloads.onChanged.addListener(delta => {
+      if (delta.id !== result.id) return;
+      if (delta.state?.current === 'complete') say('下载完成。');
+      if (delta.error) say(`下载未完成：${reason(delta.error.current)}`);
+    });
+  } catch (e) {
+    say(`无法下载：${reason(e.message)}`);
+  } finally {
+    $('save').disabled = false;
+  }
 });
-$('revokeAccess').addEventListener('click',async()=>{
-  if(!site || site.fixed || !tabId)return;
-  try{const res=await chrome.runtime.sendMessage({type:'DISABLE_SITE',tabId});if(!res?.ok)throw Error(res?.error);site=res;$('status').textContent='已撤销此网站访问。仍可从工具栏按次检测。';}
-  catch(e){$('status').textContent=e.message;}finally{permissionUI();}
-});
-$('media').addEventListener('change',()=>{remember();qualities();});$('quality').addEventListener('change',()=>{suffix();remember();$('save').disabled=!chosen().v;});$('filename').addEventListener('input',remember);$('refresh').addEventListener('click',()=>scan(true));
-$('form').addEventListener('submit',async e=>{
-  e.preventDefault();if(saving || !snapshot)return;const {m,v}=chosen();
-  if(!v){$('status').textContent='所选质量不可用，请重新检测。';return;}
-  saving=true;$('save').disabled=true;
-  try{
-    const quality=$('quality').value;const savedQuality=quality==='smallest'?'smallest':'best';
-    await chrome.storage.local.set({quality:savedQuality,saveAs:$('saveAs').checked});prefs.quality=savedQuality;
-    const name=C.filename($('filename').value,snapshot.filename,v.ext);$('filename').value=name.slice(0,-v.ext.length-1);remember();
-    const res=await chrome.runtime.sendMessage({type:'SAVE',tabId,pageKey:snapshot.pageKey,mediaKey:m.key,url:v.url,filename:name,saveAs:$('saveAs').checked});
-    if(!res?.ok)throw Error(res?.error || '下载启动失败。');$('status').textContent='已提交给 Chrome；这不代表下载已完成。请查看浏览器下载记录。';
-  }catch(e){$('status').textContent=e.message;}finally{saving=false;$('save').disabled=!chosen().v;}
-});
-function downloadText(d){$('download').textContent=d?`最近下载：${d.state==='complete'?'已完成':d.state==='interrupted'?`中断（${C.downloadError(d.error)}）`:'进行中，请查看 Chrome 下载记录'}`:'';}
-chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local' && changes.lastDownload)downloadText(changes.lastDownload.newValue);});
-(async()=>{prefs=await chrome.storage.local.get(prefs);$('saveAs').checked=prefs.saveAs;downloadText((await chrome.storage.local.get('lastDownload')).lastDownload);await scan();})().catch(e=>{$('status').textContent=e.message;});
+$('media').addEventListener('change', showVideo);
+$('quality').addEventListener('change', () => { $('ext').textContent = '.' + version().ext; });
+$('rescan').addEventListener('click', scan);
+$('saveAs').checked = localStorage.saveAs !== 'no';
+scan();

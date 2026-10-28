@@ -1,68 +1,30 @@
 {
   "manifest_version": 3,
   "name": "Short Video Clipper",
-  "version": "0.4.0",
-  "description": "保存完整视频文件，支持 LinkedIn 信息流、X、Instagram、TikTok 与通用网页。",
+  "version": "0.5.0",
+  "description": "保存网页上的视频文件。",
   "minimum_chrome_version": "111",
-  "permissions": [
-    "downloads",
-    "storage",
-    "activeTab",
-    "scripting"
-  ],
-  "background": {
-    "service_worker": "background.js"
-  },
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Short Video Clipper · 保存视频",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "32": "icons/icon32.png"
-    }
-  },
-  "icons": {
-    "16": "icons/icon16.png",
-    "32": "icons/icon32.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://x.com/*",
-        "https://twitter.com/*"
-      ],
-      "js": [
-        "core-main.js",
-        "linkedin-player.js",
-        "observer.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": [
-        "https://x.com/*",
-        "https://twitter.com/*"
-      ],
-      "js": [
-        "core.js",
-        "linkedin.js",
-        "content.js"
-      ],
-      "run_at": "document_start"
-    }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'"
-  },
+  "permissions": ["activeTab", "scripting", "downloads"],
   "host_permissions": [
     "https://x.com/*",
-    "https://twitter.com/*"
+    "https://twitter.com/*",
+    "https://www.instagram.com/*",
+    "https://www.tiktok.com/*",
+    "https://www.linkedin.com/*"
   ],
-  "optional_host_permissions": [
-    "https://*/*",
-    "http://*/*"
+  "background": {"service_worker": "background.js"},
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "保存视频",
+    "default_icon": {"16": "icons/icon16.png", "32": "icons/icon32.png"}
+  },
+  "icons": {"16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png"},
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*", "https://www.instagram.com/*", "https://www.tiktok.com/*", "https://www.linkedin.com/*"],
+      "js": ["core.js", "page.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
   ]
 }
